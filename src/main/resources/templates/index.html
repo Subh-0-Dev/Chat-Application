@@ -34,6 +34,7 @@
             color: white;
             padding: 20px;
             text-align: center;
+            position: relative;
         }
 
         .header h1 {
@@ -59,6 +60,32 @@
 
         .status.connecting {
             background: rgba(255, 193, 7, 0.8);
+        }
+
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .user-info {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9rem;
         }
 
         .room-section {
@@ -289,8 +316,12 @@
 <body>
 <div class="container">
     <div class="header">
+        <button class="logout-btn" onclick="logout()">Logout</button>
         <h1>🚀 WebSocket Chat Test</h1>
         <div class="status connecting" id="connectionStatus">Connecting...</div>
+        <div class="user-info">
+            <strong>Logged in as:</strong> <span id="loggedInUser">Loading...</span>
+        </div>
     </div>
 
     <div class="room-section">
@@ -346,12 +377,71 @@
     let roomSubscription = null;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
+    let jwtToken = null;
 
-    // Auto-connect on page load
+    // Check authentication on page load
     window.addEventListener('load', function() {
-        setTimeout(connectWebSocket, 1000); // Small delay to ensure page is ready
-        fetchCurrentUser(); // Get current user info from backend
+        checkAuthentication();
     });
+
+    function checkAuthentication() {
+        jwtToken = localStorage.getItem('jwtToken');
+        if (!jwtToken) {
+            // Redirect to login if no token
+            window.location.href = '/auth/login';
+            return;
+        }
+
+        // Initialize the application
+        setTimeout(connectWebSocket, 1000);
+        fetchCurrentUser();
+    }
+
+    function logout() {
+        // Clear JWT token
+        localStorage.removeItem('jwtToken');
+
+        // Disconnect WebSocket
+        if (stompClient && isConnected) {
+            stompClient.disconnect();
+        }
+
+        // Redirect to login
+        window.location.href = '/auth/login?logout=true';
+    }
+
+    function getAuthHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwtToken}`
+        };
+    }
+
+    async function makeAuthenticatedRequest(url, options = {}) {
+        const headers = options.headers || {};
+
+        // Add JWT token to headers
+        if (jwtToken) {
+            headers['Authorization'] = `Bearer ${jwtToken}`;
+        }
+
+        const response = await fetch(url, {
+            ...options,
+            headers: headers
+        });
+
+        // Handle token expiration
+        if (response.status === 401) {
+            showError('Session expired. Please login again.');
+            setTimeout(() => {
+                localStorage.removeItem('jwtToken');
+                window.location.href = '/auth/login';
+            }, 2000);
+            throw new Error('Token expired');
+        }
+
+        return response;
+    }
 
     function addDebugLog(message) {
         const debugDiv = document.getElementById('debugLog');
@@ -407,7 +497,7 @@
                         reconnectAttempts++;
                         addDebugLog(`Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
                         connectWebSocket();
-                    }, 3000 * reconnectAttempts); // Exponential backoff
+                    }, 3000 * reconnectAttempts);
                 }
                 break;
         }
@@ -415,16 +505,22 @@
 
     async function fetchCurrentUser() {
         try {
-            const response = await fetch('/api/user');
+            const response = await makeAuthenticatedRequest('/auth/api/user');
             if (response.ok) {
                 const userProfile = await response.json();
                 currentUser = userProfile.username;
+                document.getElementById('loggedInUser').textContent = currentUser;
+                document.getElementById('currentUser').textContent = currentUser;
                 addDebugLog(`Current user: ${currentUser}`);
             } else {
                 addDebugLog('Failed to fetch current user profile');
+                showError('Failed to load user profile');
             }
         } catch (error) {
             addDebugLog(`Error fetching user profile: ${error.message}`);
+            if (error.message !== 'Token expired') {
+                showError('Failed to load user profile');
+            }
         }
     }
 
@@ -450,13 +546,11 @@
         const previousUser = currentUser;
 
         try {
-            // Optional: Notify server via REST API
+            // Notify server via REST API
             try {
-                await fetch(`/api/rooms/${previousRoom}/leave`, {
+                await makeAuthenticatedRequest(`/api/rooms/${previousRoom}/leave`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ username: previousUser })
                 });
             } catch (error) {
@@ -475,7 +569,6 @@
 
             // Update UI
             document.getElementById('currentRoom').textContent = '';
-            document.getElementById('currentUser').textContent = '';
             document.getElementById('messages').innerHTML = '';
             updateRoomStatus(false);
 
@@ -490,7 +583,9 @@
             }
             currentRoom = null;
             updateRoomStatus(false);
-            showSuccess(`Left room "${previousRoom}" (offline mode)`);
+            if (error.message !== 'Token expired') {
+                showSuccess(`Left room "${previousRoom}" (offline mode)`);
+            }
         }
     }
 
@@ -515,11 +610,9 @@
         }
 
         try {
-            const response = await fetch('/api/rooms', {
+            const response = await makeAuthenticatedRequest('/api/rooms', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: getAuthHeaders(),
                 body: roomName
             });
 
@@ -531,7 +624,9 @@
                 showError(error);
             }
         } catch (error) {
-            showError('Failed to create room. Make sure the server is running');
+            if (error.message !== 'Token expired') {
+                showError('Failed to create room. Make sure the server is running');
+            }
             console.error('Error creating room:', error);
         }
     }
@@ -555,14 +650,13 @@
         }
 
         try {
-            const response = await fetch(`/api/rooms/${roomId}`);
+            const response = await makeAuthenticatedRequest(`/api/rooms/${roomId}`);
 
             if (response.ok) {
                 const room = await response.json();
                 currentRoom = roomId;
 
                 document.getElementById('currentRoom').textContent = roomId;
-                document.getElementById('currentUser').textContent = currentUser;
                 updateRoomStatus(true);
 
                 addDebugLog(`Joined room: ${roomId} as ${currentUser}`);
@@ -579,7 +673,9 @@
                 showError(error);
             }
         } catch (error) {
-            showError('Failed to join room. Make sure the server is running and the room exists.');
+            if (error.message !== 'Token expired') {
+                showError('Failed to join room. Make sure the server is running and the room exists.');
+            }
             console.error('Error joining room:', error);
         }
     }
@@ -588,7 +684,7 @@
         if (!currentRoom) return;
 
         try {
-            const response = await fetch(`/api/rooms/${currentRoom}/messages`);
+            const response = await makeAuthenticatedRequest(`/api/rooms/${currentRoom}/messages`);
             if (response.ok) {
                 const messages = await response.json();
                 const messagesDiv = document.getElementById('messages');
@@ -600,13 +696,20 @@
                 addDebugLog(`Loaded ${messages.length} existing messages`);
             }
         } catch (error) {
-            console.error('Error loading messages:', error);
+            if (error.message !== 'Token expired') {
+                console.error('Error loading messages:', error);
+            }
         }
     }
 
     function connectWebSocket() {
         if (isConnected) {
             addDebugLog('WebSocket already connected');
+            return;
+        }
+
+        if (!jwtToken) {
+            addDebugLog('No JWT token available for WebSocket connection');
             return;
         }
 
@@ -621,7 +724,12 @@
             addDebugLog(`STOMP: ${str}`);
         };
 
-        stompClient.connect({}, function (frame) {
+        // Include JWT token in connection headers
+        const connectHeaders = {
+            'Authorization': `Bearer ${jwtToken}`
+        };
+
+        stompClient.connect(connectHeaders, function (frame) {
             addDebugLog('WebSocket connected successfully');
             updateConnectionStatus('connected');
             showSuccess('WebSocket connected successfully!');
@@ -634,7 +742,17 @@
         }, function (error) {
             addDebugLog(`WebSocket connection failed: ${error}`);
             updateConnectionStatus('disconnected');
-            showError('Failed to connect WebSocket. Make sure the server is running.');
+
+            // Check if it's an authentication error
+            if (error.toString().includes('401') || error.toString().includes('Unauthorized')) {
+                showError('Authentication failed. Please login again.');
+                setTimeout(() => {
+                    localStorage.removeItem('jwtToken');
+                    window.location.href = '/auth/login';
+                }, 2000);
+            } else {
+                showError('Failed to connect WebSocket. Make sure the server is running.');
+            }
         });
     }
 
@@ -653,6 +771,11 @@
         const subscriptionTopic = `/topic/room/${currentRoom}`;
         addDebugLog(`Subscribing to: ${subscriptionTopic}`);
 
+        // Include JWT token in subscription headers
+        const subscriptionHeaders = {
+            'Authorization': `Bearer ${jwtToken}`
+        };
+
         roomSubscription = stompClient.subscribe(subscriptionTopic, function (message) {
             addDebugLog(`Message received on ${subscriptionTopic}`);
             try {
@@ -670,31 +793,31 @@
                 addDebugLog(`Error parsing message: ${error}`);
                 console.error('Error parsing message:', error);
             }
-        });
+        }, subscriptionHeaders);
 
         addDebugLog(`Successfully subscribed to room ${currentRoom}`);
     }
 
     function displayMessage(message) {
-    const messagesDiv = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
+        const messagesDiv = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
 
-    // Updated to use the 'username' field from your JSON response
-    const senderName = message.username || message.sender || message.userEntity?.username || 'Unknown User';
-    const isOwnMessage = senderName === currentUser;
-    messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
+        // Updated to use the 'username' field from your JSON response
+        const senderName = message.username || message.sender || message.userEntity?.username || 'Unknown User';
+        const isOwnMessage = senderName === currentUser;
+        messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
 
-    const timestamp = message.timeStamp ? new Date(message.timeStamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+        const timestamp = message.timeStamp ? new Date(message.timeStamp).toLocaleTimeString() : new Date().toLocaleTimeString();
 
-    messageDiv.innerHTML = `
-        <div class="message-header">${senderName}</div>
-        <div>${message.content}</div>
-        <div class="message-time">${timestamp}</div>
-    `;
+        messageDiv.innerHTML = `
+            <div class="message-header">${senderName}</div>
+            <div>${message.content}</div>
+            <div class="message-time">${timestamp}</div>
+        `;
 
-    messagesDiv.appendChild(messageDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
 
     function sendMessage() {
         const messageInput = document.getElementById('messageInput');
@@ -724,8 +847,13 @@
         const sendDestination = `/app/sendMessage/${currentRoom}`;
         addDebugLog(`Sending message to: ${sendDestination}`);
 
+        // Include JWT token in message headers
+        const messageHeaders = {
+            'Authorization': `Bearer ${jwtToken}`
+        };
+
         try {
-            stompClient.send(sendDestination, {}, JSON.stringify(messageRequest));
+            stompClient.send(sendDestination, messageHeaders, JSON.stringify(messageRequest));
             messageInput.value = '';
             addDebugLog(`Message sent successfully`);
         } catch (error) {

@@ -45,10 +45,10 @@ public class ChatController {
             @RequestBody MessageRequest request,
             Principal user
     ){
+
         Message message = messageService.sendMessages(request, user.getName());
         MessageResponse response=new MessageResponse();
         if(message != null){
-
             response.setId(message.getId());
             response.setContent(message.getContent());
             response.setTimeStamp(message.getTimeStamp());
