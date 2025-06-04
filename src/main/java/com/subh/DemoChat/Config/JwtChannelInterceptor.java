@@ -12,7 +12,9 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Component;
 
+@Component
 public class JwtChannelInterceptor implements ChannelInterceptor {
 
     private final JwtUtil jwtUtil;
@@ -31,15 +33,18 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
             String authHeader = accessor.getFirstNativeHeader("Authorization");
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 String jwt = authHeader.substring(7);
-                String username = jwtUtil.extractUsername(jwt);
-                UserDetails userDetails = customUserDetail.loadUserByUsername(username);
+                if (jwtUtil.validateToken(jwt, customUserDetail.loadUserByUsername(jwtUtil.extractUsername(jwt)))) {
+                    String username = jwtUtil.extractUsername(jwt);
+                    UserDetails userDetails = customUserDetail.loadUserByUsername(username);
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
 
-                accessor.setUser(authentication);  // makes Principal available in @MessageMapping
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                    accessor.setUser(authentication);
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             }
+
         }
 
         return message;

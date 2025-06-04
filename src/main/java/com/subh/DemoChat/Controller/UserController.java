@@ -15,13 +15,11 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 @Controller
@@ -64,12 +62,7 @@ public class UserController {
         UserEntity savedUser = userRepository.save(user);
         return ResponseEntity.ok(savedUser);
     }
-    @GetMapping("/api/user")
-    public ResponseEntity<?> getUserProfile(Principal principal){
-        Optional<UserEntity> userOpt = userRepository.findByEmail(principal.getName());
-        UserEntity user= userOpt.get();
-        return ResponseEntity.ok(new profileResponseDto(user.getId(),user.getUsername(),user.getEmail()));
-    }
+
 
     @Autowired
     private AuthenticationManager authManager;
@@ -88,7 +81,41 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
         }
     }
+    @GetMapping("/api/user/me")
+    public ResponseEntity<?> getUserProfile(Principal principal) {
+        Optional<UserEntity> userOpt = userRepository.findByEmail(principal.getName());
+        if (userOpt.isPresent()) {
+            UserEntity user = userOpt.get();
+            return ResponseEntity.ok(new profileResponseDto(user.getId(), user.getUsername(), user.getEmail()));
+        } else {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found");
+        }
+    }
+    @GetMapping("/api/users")
+    public ResponseEntity<List<UserEntity>> getUsers() {
+        try {
+            List<UserEntity> users = userRepository.findAll();
+            return ResponseEntity.ok(users);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    @GetMapping("/api/users/search")
+    public ResponseEntity<?> searchUsersByEmail(@RequestParam String email) {
+        try {
+            Optional<UserEntity> users = userRepository.findByEmail(email);
+            if (users.isEmpty()) {
+                users = userRepository.findByUsername(email);
+                if(users.isEmpty()){
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No users found.");
+                }
 
+            }
+            return ResponseEntity.ok(users);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error fetching users.");
+        }
+    }
 }
 
 

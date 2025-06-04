@@ -79,7 +79,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/**", "/signup","/","/login", "/js/**","/chat/**","/templates/**","/*.html").permitAll()
+                        .requestMatchers("/auth/**", "/signup","/","/login", "/js/**","/chat/**","/templates/**","/*.html","/onechat/**").permitAll()
+                        .requestMatchers("/between/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

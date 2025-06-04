@@ -14,11 +14,10 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -38,15 +37,24 @@ public class ChatController {
     private SimpMessagingTemplate messagingTemplate;
     @Autowired
     private MessageService messageService;
+
+    @GetMapping("/chat")
+    public String getChat() {
+        return "chat";
+    }
+
     @MessageMapping("/sendMessage/{roomId}") // /app/sendMessage
 //    @SendTo("/topic/room/{roomId}")
     public MessageResponse sendMessage(
             @DestinationVariable String roomId,
             @RequestBody MessageRequest request,
-            Principal user
+            Authentication authentication
+
     ){
 
-        Message message = messageService.sendMessages(request, user.getName());
+        String user = authentication.getName();
+
+        Message message = messageService.sendMessages(request, user);
         MessageResponse response=new MessageResponse();
         if(message != null){
             response.setId(message.getId());
