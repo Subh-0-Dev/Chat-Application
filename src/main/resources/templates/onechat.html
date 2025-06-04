@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One-on-One Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #4a90e2, #357abd);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            margin-bottom: 10px;
+            font-size: 1.8rem;
+        }
+
+        .status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.2);
+            display: inline-block;
+            font-size: 0.9rem;
+        }
+
+        .status.connected {
+            background: rgba(76, 175, 80, 0.8);
+        }
+
+        .status.disconnected {
+            background: rgba(244, 67, 54, 0.8);
+        }
+
+        .status.connecting {
+            background: rgba(255, 193, 7, 0.8);
+        }
+
+        .back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            text-decoration: none;
+        }
+
+        .back-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .chat-info {
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            margin: 20px;
+            border: 2px solid #eee;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #fafafa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 12px;
+            max-width: 70%;
+            animation: slideIn 0.3s ease;
+            word-wrap: break-word;
+        }
+
+        .message.own {
+            background: linear-gradient(45deg, #4a90e2, #357abd);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.other {
+            background: white;
+            border: 1px solid #eee;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-header {
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+
+        .message-time {
+            font-size: 0.8rem;
+            opacity: 0.6;
+            margin-top: 5px;
+        }
+
+        .message-input {
+            display: flex;
+            padding: 15px;
+            background: white;
+            border-top: 1px solid #eee;
+            gap: 10px;
+        }
+
+        .message-input input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .message-input input:focus {
+            border-color: #4a90e2;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #4a90e2;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #357abd;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .error {
+            color: #f44336;
+            margin: 10px 20px;
+            padding: 10px;
+            background: #ffebee;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .success {
+            color: #4caf50;
+            margin: 10px 20px;
+            padding: 10px;
+            background: #e8f5e8;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .typing-indicator {
+            padding: 10px 15px;
+            font-style: italic;
+            color: #666;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                height: 100vh;
+                border-radius: 0;
+                margin: 0;
+            }
+
+            body {
+                padding: 0;
+            }
+
+            .message {
+                max-width: 85%;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <a href="/" class="back-btn">← Back</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+        <h1>💬 Chat</h1>
+        <div class="status connecting" id="connectionStatus">Connecting...</div>
+        <div class="chat-info">
+            <strong>Chatting with:</strong> <span id="chatPartner">Loading...</span><br>
+            <strong>You:</strong> <span id="currentUser">Loading...</span>
+            <button id="deleteChatBtn">Delete Chat</button>
+        </div>
+    </div>
+
+    <div class="chat-section">
+        <div class="chat-container">
+            <div class="messages" id="messages">
+                <div class="loading">Loading conversation...</div>
+            </div>
+            <div class="typing-indicator" id="typingIndicator">
+                <span id="typingUser"></span> is typing...
+            </div>
+            <div class="message-input">
+                <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                <button class="btn btn-primary" onclick="sendMessage()" id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="error" id="errorMessage"></div>
+    <div class="success" id="successMessage"></div>
+</div>
+
+<script>
+    let stompClient = null;
+    let currentUser = null;
+    let chatPartner = null;
+    let isConnected = false;
+    let currentUsername=null;
+    let jwtToken = null;
+    let messageSubscription = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+
+    window.addEventListener('load', function() {
+        checkAuthentication();
+        getChatPartnerFromURL();
+    });
+
+    function getChatPartnerFromURL() {
+        const urlParams = new URLSearchParams(window.location.search);
+        chatPartner = urlParams.get('user');
+
+        if (!chatPartner) {
+            showError('No chat partner specified');
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+            return;
+        }
+
+        document.getElementById('chatPartner').textContent = chatPartner;
+        console.log('Chat partner:', chatPartner);
+    }
+
+    function checkAuthentication() {
+        jwtToken = localStorage.getItem('jwtToken');
+        if (!jwtToken) {
+            window.location.href = '/auth/login';
+            return;
+        }
+
+        fetchCurrentUser().then(() => {
+            if (currentUser && chatPartner) {
+                connectWebSocket();
+                loadExistingMessages();
+            }
+        });
+    }
+
+    function logout() {
+        localStorage.removeItem('jwtToken');
+        if (stompClient && isConnected) {
+            stompClient.disconnect();
+        }
+        window.location.href = '/auth/login?logout=true';
+    }
+
+    function getAuthHeaders() {
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwtToken}`
+        };
+    }
+
+    async function makeAuthenticatedRequest(url, options = {}) {
+        const headers = options.headers || {};
+        if (jwtToken) {
+            headers['Authorization'] = `Bearer ${jwtToken}`;
+        }
+
+        const response = await fetch(url, {
+            ...options,
+            headers: headers
+        });
+
+        if (response.status === 401) {
+            showError('Session expired. Please login again.');
+            setTimeout(() => {
+                localStorage.removeItem('jwtToken');
+                window.location.href = '/auth/login';
+            }, 2000);
+            throw new Error('Token expired');
+        }
+
+        return response;
+    }
+
+    function showError(message) {
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+        console.error('Error:', message);
+        setTimeout(() => {
+            errorDiv.style.display = 'none';
+        }, 5000);
+    }
+
+    function showSuccess(message) {
+        const successDiv = document.getElementById('successMessage');
+        successDiv.textContent = message;
+        successDiv.style.display = 'block';
+        setTimeout(() => {
+            successDiv.style.display = 'none';
+        }, 3000);
+    }
+
+    function updateConnectionStatus(status) {
+        const statusDiv = document.getElementById('connectionStatus');
+        isConnected = status === 'connected';
+
+        switch(status) {
+            case 'connected':
+                statusDiv.textContent = 'Connected';
+                statusDiv.className = 'status connected';
+                reconnectAttempts = 0;
+                break;
+            case 'connecting':
+                statusDiv.textContent = 'Connecting...';
+                statusDiv.className = 'status connecting';
+                break;
+            case 'disconnected':
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'status disconnected';
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    setTimeout(() => {
+                        reconnectAttempts++;
+                        connectWebSocket();
+                    }, 3000 * reconnectAttempts);
+                }
+                break;
+        }
+    }
+
+    async function fetchCurrentUser() {
+        try {
+            const response = await makeAuthenticatedRequest('/auth/api/user/me');
+            if (response.ok) {
+                const userProfile = await response.json();
+                currentUser = userProfile.email;
+                currentUsername=userProfile.username;
+                document.getElementById('currentUser').textContent = currentUser;
+                console.log('Current user:', currentUser);
+                return Promise.resolve();
+            } else {
+                showError('Failed to load user profile');
+                return Promise.reject('Failed to fetch user');
+            }
+        } catch (error) {
+            if (error.message !== 'Token expired') {
+                showError('Failed to load user profile');
+            }
+            return Promise.reject(error);
+        }
+    }
+
+    function connectWebSocket() {
+        if (isConnected) {
+            console.log('WebSocket already connected');
+            return;
+        }
+
+        if (!jwtToken) {
+            console.log('No JWT token available for WebSocket connection');
+            return;
+        }
+
+        updateConnectionStatus('connecting');
+        console.log('Attempting to connect to WebSocket...');
+
+        const socket = new SockJS('/chat');
+        stompClient = Stomp.over(socket);
+
+        stompClient.debug = function(str) {
+            console.log('STOMP:', str);
+        };
+
+        const connectHeaders = {
+            'Authorization': `Bearer ${jwtToken}`
+        };
+
+        stompClient.connect(connectHeaders, function (frame) {
+            console.log('WebSocket connected successfully');
+            updateConnectionStatus('connected');
+            showSuccess('Connected successfully!');
+            subscribeToMessages();
+        }, function (error) {
+            console.log('WebSocket connection failed:', error);
+            updateConnectionStatus('disconnected');
+
+            if (error.toString().includes('401') || error.toString().includes('Unauthorized')) {
+                showError('Authentication failed. Please login again.');
+                setTimeout(() => {
+                    localStorage.removeItem('jwtToken');
+                    window.location.href = '/auth/login';
+                }, 2000);
+            } else {
+                showError('Failed to connect. Please check your connection.');
+            }
+        });
+    }
+
+function subscribeToMessages() {
+    if (!stompClient || !isConnected) {
+        console.log('Cannot subscribe - not connected');
+        return;
+    }
+
+    const subscriptionTopic = `/user/queue/messages`;
+    console.log('Subscribing to:', subscriptionTopic);
+
+    // Remove subscriptionHeaders completely
+    messageSubscription = stompClient.subscribe(subscriptionTopic, function (message) {
+
+
+        try {
+            const messageData = JSON.parse(message.body);
+
+            // Only show relevant messages
+            const isFromPartner = messageData.sender.email === chatPartner;
+            const isToPartner = messageData.receiver.email === chatPartner;
+            const isFromCurrentUser = messageData.sender.email === currentUser;
+            const isToCurrentUser = messageData.receiver.email === currentUser;
+
+            if ((isFromPartner && isToCurrentUser) || (isFromCurrentUser && isToPartner)) {
+                displayMessage(messageData);
+            } else {
+                console.log('Message not part of current chat. Ignoring.');
+            }
+        } catch (error) {
+            console.error('Error parsing message:', error);
+        }
+    });
+
+    console.log('Successfully subscribed to messages');
+}
+
+
+
+    function displayMessage(message) {
+        const messagesDiv = document.getElementById('messages');
+
+
+        const loadingDiv = messagesDiv.querySelector('.loading');
+        if (loadingDiv) {
+            loadingDiv.remove();
+        }
+
+        const messageDiv = document.createElement('div');
+        const senderName = message.sender.username|| 'Unknown';
+
+        const isOwnMessage = senderName === currentUsername;
+
+        messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
+
+        const time= message.timeStamp || message.timestamp;
+
+        const timestamp = normalizeTimestamp(time);
+
+        const newmessage= message.content || message.message;
+
+        messageDiv.innerHTML = `
+            <div class="message-header">${senderName}</div>
+            <div>${newmessage}</div>
+            <div class="message-time">${timestamp}</div>
+        `;
+
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function normalizeTimestamp(timestamp) {
+    const trimmed = timestamp?.split('.')[0]; // remove microseconds
+    const date = new Date(trimmed);
+    return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+    }
+
+
+    async function loadExistingMessages() {
+    if (!currentUser || !chatPartner) return;
+
+    try {
+        const response = await makeAuthenticatedRequest(`/between/${currentUser}/${chatPartner}`);
+        if (response.ok) {
+            const messages = await response.json();
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+
+            if (messages.length === 0) {
+                messagesDiv.innerHTML = '<div class="loading">Start your conversation!</div>';
+            } else {
+                messages.forEach(message => {
+
+                    displayMessage(message);
+                });
+            }
+
+            console.log(`Loaded ${messages.length} existing messages`);
+        } else {
+            const errorMessage = await response.text();
+            console.error('Failed to load conversation history:', errorMessage);
+            showError('Failed to load conversation history');
+        }
+    } catch (error) {
+        if (error.message !== 'Token expired') {
+            console.error('Error loading messages:', error);
+            showError('Failed to load conversation history');
+        }
+    }
+}
+
+
+    function sendMessage() {
+        const messageInput = document.getElementById('messageInput');
+        const content = messageInput.value.trim();
+
+        if (!content) {
+            showError('Please enter a message');
+            return;
+        }
+
+        if (!isConnected) {
+            showError('Not connected. Please wait for connection.');
+            return;
+        }
+
+        if (!currentUser || !chatPartner) {
+            showError('Missing user information');
+            return;
+        }
+
+
+
+        const messageRequest = {
+            content: content
+        };
+
+        const sendDestination = `/app/sendMessages/${chatPartner}`;
+        const messageHeaders = {
+            'Authorization': `Bearer ${jwtToken}`
+        };
+
+        console.log('Send destination:', sendDestination);
+        console.log('Message payload:', JSON.stringify(messageRequest));
+
+        try {
+            stompClient.send(sendDestination, messageHeaders, JSON.stringify(messageRequest));
+            messageInput.value = '';
+            console.log('Message sent via WebSocket successfully');
+
+            // Don't display immediately - wait for WebSocket confirmation
+            // The message will be displayed when we receive it back through the subscription
+
+        } catch (error) {
+            showError('Failed to send message');
+            console.error('Error sending message:', error);
+        }
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+
+    // Handle page visibility to reconnect if needed
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden && !isConnected) {
+            console.log('Page became visible, attempting to reconnect...');
+            connectWebSocket();
+        }
+    });
+
+    async function deleteChatWithUser(email) {
+    try {
+        const response = await fetch(`/api/chats/delete/${encodeURIComponent(email)}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            showSuccess("Chat deleted successfully.");
+            window.location.href = 'auth/index';
+
+        } else {
+            const error = await response.text();
+            showError(error || "Failed to delete chat.");
+        }
+    } catch (err) {
+        console.error("Error deleting chat:", err);
+        showError("Error deleting chat.");
+    }
+}
+
+
+    document.getElementById('deleteChatBtn').addEventListener('click', () => {
+    deleteChatWithUser(chatPartner);
+});
+
+</script>
+</body>
+</html>
